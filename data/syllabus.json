@@ -1,0 +1,9 @@
+{
+  "title": "Course Syllabus",
+  "subtitle": "Add weeks, topics, and notes here.",
+  "items": [
+    { "week": "Week 1", "topic": "Orientation / Expectations", "notes": "Course overview, attendance, assignments." },
+    { "week": "Week 2", "topic": "Foundations", "notes": "Core concepts and terminology." },
+    { "week": "Week 5", "topic": "Module 4: Counseling Theories & Practice", "notes": "MI, Stages of Change, CBT, Harm Reduction, Boundaries." }
+  ]
+}

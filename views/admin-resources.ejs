@@ -1,0 +1,65 @@
+﻿<section class="card">
+  <h1>Resources</h1>
+  <p class="muted">Upload PowerPoints, PDFs, handouts, and other files. Students download them from the Resources page.</p>
+
+  <% if (error) { %>
+    <div class="alert"><%= error %></div>
+  <% } %>
+
+  <form method="POST" action="/admin/resources/upload" enctype="multipart/form-data" class="form">
+    <label>
+      Title
+      <input name="title" placeholder="Example: Module 4 Slides" />
+    </label>
+
+    <label>
+      Category
+      <input name="category" placeholder="Example: Slides" />
+      <div class="muted">Examples: Slides, Handouts, Assignments, Syllabus</div>
+    </label>
+
+    <label>
+      Description (optional)
+      <textarea name="description" rows="3"></textarea>
+    </label>
+
+    <label>
+      File
+      <input name="file" type="file" required />
+    </label>
+
+    <button class="btn" type="submit">Upload</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Uploaded files</h2>
+
+  <% if (!resources.length) { %>
+    <p class="muted">No files uploaded yet.</p>
+  <% } %>
+
+  <ul class="list">
+    <% resources.forEach(r => { %>
+      <li class="list-item">
+        <div class="row space">
+          <div>
+            <div><%= r.title %></div>
+            <div class="muted"><%= r.category %></div>
+            <% if (r.description) { %>
+              <div class="muted"><%= r.description %></div>
+            <% } %>
+            <div class="muted"><%= r.original_name %></div>
+          </div>
+
+          <div class="row">
+            <a class="btn btn-ghost" href="<%= r.url %>" target="_blank" rel="noopener">View</a>
+            <form method="POST" action="/admin/resources/<%= r.id %>/delete" onsubmit="return confirm('Delete this file?')">
+              <button class="btn btn-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+      </li>
+    <% }) %>
+  </ul>
+</section>

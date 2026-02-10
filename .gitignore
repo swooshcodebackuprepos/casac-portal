@@ -1,0 +1,9 @@
+﻿node_modules/
+.env
+portal.db
+portal.db-shm
+portal.db-wal
+sessions.db
+uploads/
+.DS_Store
+npm-debug.log*

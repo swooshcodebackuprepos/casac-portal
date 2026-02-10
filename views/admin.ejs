@@ -1,0 +1,37 @@
+﻿<section class="card">
+  <h1>Admin</h1>
+  <p class="muted">Create modules and lessons. Add YouTube links for recordings. Lesson content supports Markdown.</p>
+
+  <div class="actions">
+    <a class="btn" href="/admin/modules/new">New Module</a>
+    <a class="btn btn-ghost" href="/admin/resources">Manage Resources</a>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Modules</h2>
+
+  <% if (!modules.length) { %>
+    <p class="muted">No modules yet.</p>
+  <% } %>
+
+  <ul class="list">
+    <% modules.forEach(m => { %>
+      <li class="list-item">
+        <div class="row space">
+          <div>
+            <div><%= m.title %></div>
+            <div class="muted"><%= m.description %></div>
+          </div>
+          <div class="row">
+            <a class="btn btn-ghost" href="/admin/modules/<%= m.id %>/lessons/new">New Lesson</a>
+            <a class="btn btn-ghost" href="/admin/modules/<%= m.id %>/edit">Edit</a>
+            <form method="POST" action="/admin/modules/<%= m.id %>/delete" onsubmit="return confirm('Delete module and all lessons?')">
+              <button class="btn btn-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+      </li>
+    <% }) %>
+  </ul>
+</section>

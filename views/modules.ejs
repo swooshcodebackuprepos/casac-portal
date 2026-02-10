@@ -1,0 +1,10 @@
+﻿<h1>Modules</h1>
+
+<section class="grid">
+  <% modules.forEach(m => { %>
+    <a class="card card-link" href="/modules/<%= m.id %>">
+      <h2><%= m.title %></h2>
+      <p class="muted"><%= m.description %></p>
+    </a>
+  <% }) %>
+</section>

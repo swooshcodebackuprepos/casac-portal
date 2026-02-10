@@ -1,0 +1,32 @@
+﻿<section class="card">
+  <h1>Resources</h1>
+  <p class="muted">Download PowerPoints, PDFs, handouts, and other course files.</p>
+</section>
+
+<% if (!resources.length) { %>
+  <section class="card">
+    <p class="muted">No resources uploaded yet.</p>
+  </section>
+<% } %>
+
+<% categories.forEach(cat => { %>
+  <section class="card">
+    <h2><%= cat %></h2>
+    <ul class="list">
+      <% resources.filter(r => r.category === cat).forEach(r => { %>
+        <li class="list-item">
+          <div class="row space">
+            <div>
+              <div><%= r.title %></div>
+              <% if (r.description) { %>
+                <div class="muted"><%= r.description %></div>
+              <% } %>
+              <div class="muted"><%= r.original_name %></div>
+            </div>
+            <a class="btn btn-ghost" href="<%= r.url %>" target="_blank" rel="noopener">Download</a>
+          </div>
+        </li>
+      <% }) %>
+    </ul>
+  </section>
+<% }) %>

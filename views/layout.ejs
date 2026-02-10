@@ -1,0 +1,42 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title><%= (typeof title !== "undefined" && title) ? title : "Course Portal" %></title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <a href="/" class="brand-link">Course Portal</a>
+      </div>
+
+      <nav class="nav">
+        <% if (user) { %>
+          <a href="/">Home</a>
+          <a href="/modules">Modules</a>
+          <a href="/syllabus">Syllabus</a>
+          <a href="/qas">Q&A</a>
+          <a href="/resources">Resources</a>
+          <% if (user.role === "admin") { %>
+            <a href="/admin">Admin</a>
+          <% } %>
+          <form method="POST" action="/logout" class="logout-form">
+            <button type="submit" class="btn btn-ghost">Logout</button>
+          </form>
+        <% } else { %>
+          <a href="/login">Login</a>
+        <% } %>
+      </nav>
+    </header>
+
+    <main class="container">
+      <%- body %>
+    </main>
+
+    <footer class="footer">
+      <div>Private course portal</div>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+﻿<section class="card">
+  <h1><%= module.title %></h1>
+  <p class="muted"><%= module.description %></p>
+</section>
+
+<section class="card">
+  <h2>Lessons</h2>
+
+  <% if (!lessons.length) { %>
+    <p class="muted">No lessons yet.</p>
+  <% } %>
+
+  <ul class="list">
+    <% lessons.forEach(l => { %>
+      <li class="list-item">
+        <a href="/lessons/<%= l.id %>"><%= l.title %></a>
+        <% if (l.youtube_url) { %>
+          <span class="pill">Video</span>
+        <% } %>
+      </li>
+    <% }) %>
+  </ul>
+</section>

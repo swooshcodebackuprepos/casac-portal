@@ -1,0 +1,17 @@
+﻿<section class="card">
+  <h1><%= qas.title %></h1>
+  <% if (qas.subtitle) { %>
+    <p class="muted"><%= qas.subtitle %></p>
+  <% } %>
+</section>
+
+<% qas.sections.forEach(sec => { %>
+  <section class="card">
+    <h2><%= sec.title %></h2>
+    <ol class="qa">
+      <% sec.questions.forEach(q => { %>
+        <li><%= q %></li>
+      <% }) %>
+    </ol>
+  </section>
+<% }) %>

@@ -1,0 +1,98 @@
+﻿<section class="card">
+  <div class="crumbs">
+    <a href="/modules/<%= lesson.module_id %>"><%= lesson.module_title %></a>
+    <span>/</span>
+    <span><%= lesson.title %></span>
+  </div>
+
+  <h1><%= lesson.title %></h1>
+
+  <% if (lesson.youtube_url) { %>
+    <div class="row" style="margin-top: 10px;">
+      <a class="btn" href="<%= lesson.youtube_url %>" target="_blank" rel="noopener">Open Recording on YouTube</a>
+      <a class="btn btn-ghost" href="<%= lesson.youtube_url %>" target="_blank" rel="noopener">Copy/Verify Link</a>
+    </div>
+    <div class="muted" style="margin-top: 8px; word-break: break-word;">
+      <%= lesson.youtube_url %>
+    </div>
+  <% } else { %>
+    <div class="muted" style="margin-top: 8px;">
+      No recording link added yet.
+    </div>
+  <% } %>
+</section>
+
+<% if (videoId) { %>
+  <section class="card">
+    <h2>Recording</h2>
+
+    <div id="yt-embed-wrap" class="video">
+      <iframe
+        id="yt-embed"
+        src="https://www.youtube-nocookie.com/embed/<%= videoId %>"
+        title="YouTube video player"
+        frameborder="0"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowfullscreen>
+      </iframe>
+    </div>
+
+    <div id="yt-fallback" class="card" style="display:none; margin-top: 12px;">
+      <h2 style="margin: 0 0 6px;">Recording can’t be embedded</h2>
+      <p class="muted" style="margin: 0 0 10px;">
+        Some YouTube videos play on YouTube but won’t embed on other sites.
+      </p>
+      <% if (lesson.youtube_url) { %>
+        <a class="btn" href="<%= lesson.youtube_url %>" target="_blank" rel="noopener">Open Recording on YouTube</a>
+      <% } %>
+    </div>
+
+    <script>
+      (function () {
+        var iframe = document.getElementById("yt-embed");
+        var wrap = document.getElementById("yt-embed-wrap");
+        var fb = document.getElementById("yt-fallback");
+
+        if (!iframe || !wrap || !fb) return;
+
+        var showedFallback = false;
+
+        function showFallback() {
+          if (showedFallback) return;
+          showedFallback = true;
+          wrap.style.display = "none";
+          fb.style.display = "block";
+        }
+
+        iframe.addEventListener("error", showFallback);
+
+        // If YouTube returns an error inside the iframe, the iframe "error" event often won't fire.
+        // So we also check after a short delay and swap to fallback if the player area is still blank-ish.
+        setTimeout(function () {
+          try {
+            var rect = wrap.getBoundingClientRect();
+            if (rect.height < 50) showFallback();
+          } catch (e) {}
+        }, 1500);
+
+        // A practical approach: if the embed hasn't loaded a visible player after a few seconds, show fallback.
+        setTimeout(function () {
+          if (showedFallback) return;
+          // We can’t read iframe contents due to cross-origin, so this is a time-based fallback.
+          // Users still have the top button either way.
+          // Uncomment next line if you want to always hide the embed after 4s when it fails:
+          // showFallback();
+        }, 4000);
+      })();
+    </script>
+
+    <div class="muted" style="margin-top: 10px;">
+      If the embedded player shows an error, use the button above to open the recording.
+    </div>
+  </section>
+<% } %>
+
+<section class="card prose">
+  <h2>Lesson Content</h2>
+  <%- contentHtml %>
+</section>

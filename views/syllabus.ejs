@@ -1,0 +1,21 @@
+﻿<section class="card">
+  <h1><%= syllabus.title %></h1>
+  <% if (syllabus.subtitle) { %>
+    <p class="muted"><%= syllabus.subtitle %></p>
+  <% } %>
+</section>
+
+<section class="card">
+  <h2>Schedule</h2>
+  <ul class="list">
+    <% syllabus.items.forEach(item => { %>
+      <li class="list-item">
+        <div class="row">
+          <span class="pill"><%= item.week %></span>
+          <span><%= item.topic %></span>
+        </div>
+        <div class="muted"><%= item.notes %></div>
+      </li>
+    <% }) %>
+  </ul>
+</section>

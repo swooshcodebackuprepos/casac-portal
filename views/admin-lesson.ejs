@@ -1,0 +1,47 @@
+﻿<section class="card">
+  <h1><%= mode === "new" ? "New Lesson" : "Edit Lesson" %></h1>
+  <p class="muted">Module: <%= module.title %></p>
+
+  <% if (error) { %>
+    <div class="alert"><%= error %></div>
+  <% } %>
+
+  <form method="POST" action="<%= mode === "new"
+    ? ("/admin/modules/" + module.id + "/lessons/new")
+    : ("/admin/lessons/" + lesson.id + "/edit") %>" class="form">
+
+    <label>
+      Title
+      <input name="title" value="<%= lesson.title %>" required />
+    </label>
+
+    <label>
+      YouTube URL (optional)
+      <input name="youtube_url" value="<%= lesson.youtube_url %>" placeholder="https://www.youtube.com/watch?v=..." />
+      <div class="muted">Use public or unlisted videos. Private videos will not embed.</div>
+    </label>
+
+    <label>
+      Sort Order (lower shows first)
+      <input name="sort_order" type="number" value="<%= lesson.sort_order %>" />
+    </label>
+
+    <label>
+      Lesson Content (Markdown)
+      <textarea name="content_md" rows="12"><%= lesson.content_md %></textarea>
+    </label>
+
+    <div class="row">
+      <button class="btn" type="submit">Save</button>
+      <a class="btn btn-ghost" href="/admin">Cancel</a>
+    </div>
+  </form>
+
+  <% if (mode === "edit") { %>
+    <section class="card" style="margin-top: 12px;">
+      <form method="POST" action="/admin/lessons/<%= lesson.id %>/delete" onsubmit="return confirm('Delete this lesson?')">
+        <button class="btn btn-danger" type="submit">Delete lesson</button>
+      </form>
+    </section>
+  <% } %>
+</section>
