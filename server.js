@@ -8,90 +8,85 @@ const helmet = require("helmet");
 const bcrypt = require("bcrypt");
 const Database = require("better-sqlite3");
 const { marked } = require("marked");
+const expressLayouts = require("express-ejs-layouts");
 require("dotenv").config();
 
 const { requireAuth, requireAdmin } = require("./middleware/auth");
 
-// ---------- Render-safe paths ----------
-const DATA_DIR = process.env.DATA_DIR || __dirname;
-
-// Make sure the directory exists (Render persistent disk like /var/data will exist,
-// but this also makes local/dev safe)
-try {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-} catch (e) {
-  // If it fails, we still proceed; sqlite will error loudly and logs will show why.
-}
-
-// Always store DB and sessions in DATA_DIR so Render can write to it
-const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, "portal.db");
-const SESSIONS_DB_PATH = process.env.SESSIONS_DB_PATH || path.join(DATA_DIR, "sessions.db");
-
-// Port for Render (Render sets PORT)
-const PORT = Number(process.env.PORT || 3000);
-
 const app = express();
 
-// Render/Reverse proxy fix (required for secure cookies behind proxy)
+// Important on Render/behind proxy (HTTPS)
 app.set("trust proxy", 1);
 
-// ---------- Database ----------
+const PORT = Number(process.env.PORT || 3000);
+
+// Persistent disk directory (Render sets this to /var/data)
+const DATA_DIR = process.env.DATA_DIR || __dirname;
+try {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch {}
+
+const DB_PATH = process.env.DB_PATH || path.join(DATA_DIR, "portal.db");
+const SESSIONS_DB = process.env.SESSIONS_DB || "sessions.db";
+
+console.log(`Using DATA_DIR=${DATA_DIR}`);
+console.log(`DB=${DB_PATH}`);
+console.log(`SESSIONS=${path.join(__dirname, SESSIONS_DB)}`);
+
 const db = new Database(DB_PATH);
 
-// ---------- Views ----------
+// Views + layout
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ---------- Security headers / CSP (allow YouTube embeds) ----------
+app.use(expressLayouts);
+app.set("layout", "layout");
+
+// If any view contains: <% layout('layout') %> it won’t crash.
+// express-ejs-layouts will handle the actual layout wrapping.
+app.locals.layout = function () {};
+
+// Security headers (kept)
 app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
         "frame-src": ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-        "script-src": ["'self'", "'unsafe-inline'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
-        "img-src": ["'self'", "data:", "https://i.ytimg.com"],
+        "script-src": ["'self'", "'unsafe-inline'", "https://www.youtube.com"],
+        "img-src": ["'self'", "data:"],
         "style-src": ["'self'", "'unsafe-inline'"]
       }
     }
   })
 );
 
-// ---------- Parsers / Static ----------
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, "public")));
 
-// ---------- Sessions (Render-safe) ----------
+// Sessions
 app.use(
   session({
-    store: new SQLiteStore({
-      // connect-sqlite3 wants a filename + directory
-      db: path.basename(SESSIONS_DB_PATH),
-      dir: path.dirname(SESSIONS_DB_PATH)
-    }),
-    secret: process.env.SESSION_SECRET || "replace_me_in_render",
+    store: new SQLiteStore({ db: SESSIONS_DB, dir: __dirname }),
+    secret: process.env.SESSION_SECRET || "replace_me",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      // On Render you are HTTPS, so secure cookies are correct.
-      // In local dev (http://localhost) secure would block cookies.
-      secure: process.env.NODE_ENV === "production",
+      secure: false,
       maxAge: 1000 * 60 * 60 * 12
     }
   })
 );
 
-// Make user available to templates
 app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
   next();
 });
 
-// ---------- Helpers ----------
 function parseYouTube(url) {
   if (!url) return null;
   try {
@@ -113,17 +108,20 @@ function safeHtmlFromMarkdown(md) {
   return marked.parse(md || "");
 }
 
-// ---------- Routes ----------
-app.get("/", requireAuth, (req, res) => {
+// Always send unauthenticated users to /login
+app.get("/", (req, res) => {
+  if (!req.session.user) return res.redirect("/login");
+
   const modules = db
     .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
     .all();
-  res.render("index", { modules });
+
+  res.render("index", { title: "Home", modules });
 });
 
 app.get("/login", (req, res) => {
   if (req.session.user) return res.redirect("/");
-  res.render("login", { error: null });
+  res.render("login", { title: "Login", error: null });
 });
 
 app.post("/login", async (req, res) => {
@@ -131,15 +129,13 @@ app.post("/login", async (req, res) => {
   const password = String(req.body.password || "");
 
   const user = db.prepare(`SELECT id, email, password_hash, role FROM users WHERE email=?`).get(email);
-  if (!user) return res.status(401).render("login", { error: "Invalid email or password." });
+  if (!user) return res.status(401).render("login", { title: "Login", error: "Invalid email or password." });
 
   const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).render("login", { error: "Invalid email or password." });
+  if (!ok) return res.status(401).render("login", { title: "Login", error: "Invalid email or password." });
 
   req.session.user = { id: user.id, email: user.email, role: user.role };
-
-  // Ensure session is actually persisted before redirect (helps on some hosts)
-  req.session.save(() => res.redirect("/"));
+  res.redirect("/");
 });
 
 app.post("/logout", requireAuth, (req, res) => {
@@ -152,7 +148,7 @@ app.get("/syllabus", requireAuth, (req, res) => {
   try {
     syllabus = JSON.parse(fs.readFileSync(syllabusPath, "utf8"));
   } catch {}
-  res.render("syllabus", { syllabus });
+  res.render("syllabus", { title: "Syllabus", syllabus });
 });
 
 app.get("/qas", requireAuth, (req, res) => {
@@ -161,14 +157,14 @@ app.get("/qas", requireAuth, (req, res) => {
   try {
     qas = JSON.parse(fs.readFileSync(qasPath, "utf8"));
   } catch {}
-  res.render("qas", { qas });
+  res.render("qas", { title: "Q&A", qas });
 });
 
 app.get("/modules", requireAuth, (req, res) => {
   const modules = db
     .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
     .all();
-  res.render("modules", { modules });
+  res.render("modules", { title: "Modules", modules });
 });
 
 app.get("/modules/:id", requireAuth, (req, res) => {
@@ -185,7 +181,7 @@ app.get("/modules/:id", requireAuth, (req, res) => {
     )
     .all(id);
 
-  res.render("module", { module, lessons });
+  res.render("module", { title: module.title, module, lessons });
 });
 
 app.get("/lessons/:id", requireAuth, (req, res) => {
@@ -204,7 +200,7 @@ app.get("/lessons/:id", requireAuth, (req, res) => {
   const videoId = parseYouTube(lesson.youtube_url);
   const contentHtml = safeHtmlFromMarkdown(lesson.content_md);
 
-  res.render("lesson", { lesson, videoId, contentHtml });
+  res.render("lesson", { title: lesson.title, lesson, videoId, contentHtml });
 });
 
 /* ------------------ Admin ------------------ */
@@ -213,11 +209,12 @@ app.get("/admin", requireAdmin, (req, res) => {
   const modules = db
     .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
     .all();
-  res.render("admin", { modules });
+  res.render("admin", { title: "Admin", modules });
 });
 
 app.get("/admin/modules/new", requireAdmin, (req, res) => {
   res.render("admin-module", {
+    title: "New Module",
     mode: "new",
     module: { title: "", description: "", sort_order: 0 },
     error: null
@@ -231,17 +228,14 @@ app.post("/admin/modules/new", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-module", {
+      title: "New Module",
       mode: "new",
       module: { title, description, sort_order },
       error: "Title is required."
     });
   }
 
-  db.prepare(`INSERT INTO modules (title, description, sort_order) VALUES (?, ?, ?)`).run(
-    title,
-    description,
-    sort_order
-  );
+  db.prepare(`INSERT INTO modules (title, description, sort_order) VALUES (?, ?, ?)`).run(title, description, sort_order);
   res.redirect("/admin");
 });
 
@@ -249,7 +243,7 @@ app.get("/admin/modules/:id/edit", requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const module = db.prepare(`SELECT id, title, description, sort_order FROM modules WHERE id=?`).get(id);
   if (!module) return res.status(404).send("Module not found");
-  res.render("admin-module", { mode: "edit", module, error: null });
+  res.render("admin-module", { title: "Edit Module", mode: "edit", module, error: null });
 });
 
 app.post("/admin/modules/:id/edit", requireAdmin, (req, res) => {
@@ -260,18 +254,14 @@ app.post("/admin/modules/:id/edit", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-module", {
+      title: "Edit Module",
       mode: "edit",
       module: { id, title, description, sort_order },
       error: "Title is required."
     });
   }
 
-  db.prepare(`UPDATE modules SET title=?, description=?, sort_order=? WHERE id=?`).run(
-    title,
-    description,
-    sort_order,
-    id
-  );
+  db.prepare(`UPDATE modules SET title=?, description=?, sort_order=? WHERE id=?`).run(title, description, sort_order, id);
   res.redirect("/admin");
 });
 
@@ -287,6 +277,7 @@ app.get("/admin/modules/:moduleId/lessons/new", requireAdmin, (req, res) => {
   if (!module) return res.status(404).send("Module not found");
 
   res.render("admin-lesson", {
+    title: "New Lesson",
     mode: "new",
     module,
     lesson: { title: "", youtube_url: "", sort_order: 0, content_md: "" },
@@ -306,6 +297,7 @@ app.post("/admin/modules/:moduleId/lessons/new", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-lesson", {
+      title: "New Lesson",
       mode: "new",
       module,
       lesson: { title, youtube_url, sort_order, content_md },
@@ -330,7 +322,7 @@ app.get("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
   if (!lesson) return res.status(404).send("Lesson not found");
 
   const module = db.prepare(`SELECT id, title FROM modules WHERE id=?`).get(lesson.module_id);
-  res.render("admin-lesson", { mode: "edit", module, lesson, error: null });
+  res.render("admin-lesson", { title: "Edit Lesson", mode: "edit", module, lesson, error: null });
 });
 
 app.post("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
@@ -347,6 +339,7 @@ app.post("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-lesson", {
+      title: "Edit Lesson",
       mode: "edit",
       module,
       lesson: { ...lesson, title, youtube_url, sort_order, content_md },
@@ -373,14 +366,6 @@ app.post("/admin/lessons/:id/delete", requireAdmin, (req, res) => {
   res.redirect("/admin");
 });
 
-// ---------- Health check (optional but helpful) ----------
-app.get("/health", (req, res) => {
-  res.status(200).send("ok");
-});
-
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`CASAC Portal listening on 0.0.0.0:${PORT}`);
-  console.log(`Using DATA_DIR=${DATA_DIR}`);
-  console.log(`DB=${DB_PATH}`);
-  console.log(`SESSIONS=${SESSIONS_DB_PATH}`);
 });
