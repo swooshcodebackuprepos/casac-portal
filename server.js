@@ -8,40 +8,56 @@ const helmet = require("helmet");
 const bcrypt = require("bcrypt");
 const Database = require("better-sqlite3");
 const { marked } = require("marked");
-const expressLayouts = require("express-ejs-layouts");
 require("dotenv").config();
 
 const { requireAuth, requireAdmin } = require("./middleware/auth");
 
-const app = express();
+// Render provides PORT. Local falls back to 3000.
 const PORT = Number(process.env.PORT || 3000);
 
-/**
- * Persistent storage:
- * - Local: uses project folder
- * - Render: add a Disk mounted at /var/data
- */
-const DATA_DIR = process.env.DATA_DIR || (fs.existsSync("/var/data") ? "/var/data" : __dirname);
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// Use Render Disk path when provided
+const DATA_DIR = process.env.DATA_DIR
+  ? String(process.env.DATA_DIR)
+  : __dirname;
 
+// Ensure DATA_DIR exists (Render disk mount will exist, but safe to ensure)
+try {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+} catch {}
+
+// DB paths must be writable
 const dbPath = path.join(DATA_DIR, "portal.db");
-const sessionsDir = DATA_DIR;
-const sessionsDbName = "sessions.db";
+const sessionsPath = path.join(DATA_DIR, "sessions.db");
+
+// If DB doesn't exist yet (first boot on a new disk), initialize it
+if (!fs.existsSync(dbPath)) {
+  try {
+    require("./db/init");
+  } catch (e) {
+    console.error("DB init failed:", e);
+  }
+}
 
 const db = new Database(dbPath);
 
+const app = express();
+
+// When behind Render proxy (HTTPS), this makes secure cookies work correctly
+app.set("trust proxy", 1);
+
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
-
-app.use(expressLayouts);
-app.set("layout", "layout");
 
 app.use(
   helmet({
     contentSecurityPolicy: {
       useDefaults: true,
       directives: {
-        "frame-src": ["'self'", "https://www.youtube.com", "https://www.youtube-nocookie.com"],
+        "frame-src": [
+          "'self'",
+          "https://www.youtube.com",
+          "https://www.youtube-nocookie.com"
+        ],
         "script-src": ["'self'", "'unsafe-inline'", "https://www.youtube.com"],
         "img-src": ["'self'", "data:"],
         "style-src": ["'self'", "'unsafe-inline'"]
@@ -57,14 +73,17 @@ app.use(express.static(path.join(__dirname, "public")));
 
 app.use(
   session({
-    store: new SQLiteStore({ db: sessionsDbName, dir: sessionsDir }),
+    store: new SQLiteStore({
+      db: path.basename(sessionsPath),
+      dir: path.dirname(sessionsPath)
+    }),
     secret: process.env.SESSION_SECRET || "replace_me",
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      secure: process.env.NODE_ENV === "production", // secure cookies on Render
       maxAge: 1000 * 60 * 60 * 12
     }
   })
@@ -77,37 +96,18 @@ app.use((req, res, next) => {
 
 function parseYouTube(url) {
   if (!url) return null;
-  const raw = String(url).trim();
-  if (!raw) return null;
-
   try {
-    const u = new URL(raw);
-    const host = u.hostname.replace(/^www\./, "").toLowerCase();
-
-    if (host === "youtu.be") {
-      const id = u.pathname.split("/").filter(Boolean)[0];
-      return id || null;
-    }
-
-    if (host.endsWith("youtube.com")) {
+    const u = new URL(url);
+    const host = u.hostname.replace("www.", "");
+    if (host === "youtu.be") return u.pathname.slice(1);
+    if (host === "youtube.com" || host === "m.youtube.com") {
       const v = u.searchParams.get("v");
       if (v) return v;
-
       const parts = u.pathname.split("/").filter(Boolean);
-
       const embedIndex = parts.indexOf("embed");
       if (embedIndex >= 0 && parts[embedIndex + 1]) return parts[embedIndex + 1];
-
-      const shortsIndex = parts.indexOf("shorts");
-      if (shortsIndex >= 0 && parts[shortsIndex + 1]) return parts[shortsIndex + 1];
-
-      const liveIndex = parts.indexOf("live");
-      if (liveIndex >= 0 && parts[liveIndex + 1]) return parts[liveIndex + 1];
     }
-  } catch {
-    if (/^[a-zA-Z0-9_-]{11}$/.test(raw)) return raw;
-  }
-
+  } catch {}
   return null;
 }
 
@@ -119,25 +119,32 @@ function safeHtmlFromMarkdown(md) {
 
 app.get("/", requireAuth, (req, res) => {
   const modules = db
-    .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
+    .prepare(
+      `SELECT id, title, description, sort_order
+       FROM modules
+       ORDER BY sort_order ASC, id ASC`
+    )
     .all();
-  res.render("index", { title: "Home", modules });
+  res.render("index", { modules });
 });
 
 app.get("/login", (req, res) => {
   if (req.session.user) return res.redirect("/");
-  res.render("login", { title: "Login", error: null });
+  res.render("login", { error: null });
 });
 
 app.post("/login", async (req, res) => {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = String(req.body.password || "");
 
-  const user = db.prepare(`SELECT id, email, password_hash, role FROM users WHERE email=?`).get(email);
-  if (!user) return res.status(401).render("login", { title: "Login", error: "Invalid email or password." });
+  const user = db
+    .prepare(`SELECT id, email, password_hash, role FROM users WHERE email=?`)
+    .get(email);
+
+  if (!user) return res.status(401).render("login", { error: "Invalid email or password." });
 
   const ok = await bcrypt.compare(password, user.password_hash);
-  if (!ok) return res.status(401).render("login", { title: "Login", error: "Invalid email or password." });
+  if (!ok) return res.status(401).render("login", { error: "Invalid email or password." });
 
   req.session.user = { id: user.id, email: user.email, role: user.role };
   res.redirect("/");
@@ -149,27 +156,31 @@ app.post("/logout", requireAuth, (req, res) => {
 
 app.get("/syllabus", requireAuth, (req, res) => {
   const syllabusPath = path.join(__dirname, "data", "syllabus.json");
-  let syllabus = { title: "Syllabus", subtitle: "", items: [] };
+  let syllabus = { title: "Syllabus", items: [] };
   try {
     syllabus = JSON.parse(fs.readFileSync(syllabusPath, "utf8"));
   } catch {}
-  res.render("syllabus", { title: "Syllabus", syllabus });
+  res.render("syllabus", { syllabus });
 });
 
 app.get("/qas", requireAuth, (req, res) => {
   const qasPath = path.join(__dirname, "data", "qas.json");
-  let qas = { title: "Q&A", subtitle: "", sections: [] };
+  let qas = { title: "Q&A", sections: [] };
   try {
     qas = JSON.parse(fs.readFileSync(qasPath, "utf8"));
   } catch {}
-  res.render("qas", { title: "Q&A", qas });
+  res.render("qas", { qas });
 });
 
 app.get("/modules", requireAuth, (req, res) => {
   const modules = db
-    .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
+    .prepare(
+      `SELECT id, title, description, sort_order
+       FROM modules
+       ORDER BY sort_order ASC, id ASC`
+    )
     .all();
-  res.render("modules", { title: "Modules", modules });
+  res.render("modules", { modules });
 });
 
 app.get("/modules/:id", requireAuth, (req, res) => {
@@ -179,18 +190,23 @@ app.get("/modules/:id", requireAuth, (req, res) => {
 
   const lessons = db
     .prepare(
-      `SELECT id, title, youtube_url, sort_order FROM lessons WHERE module_id=? ORDER BY sort_order ASC, id ASC`
+      `SELECT id, title, youtube_url, sort_order
+       FROM lessons
+       WHERE module_id=?
+       ORDER BY sort_order ASC, id ASC`
     )
     .all(id);
 
-  res.render("module", { title: module.title, module, lessons });
+  res.render("module", { module, lessons });
 });
 
 app.get("/lessons/:id", requireAuth, (req, res) => {
   const id = Number(req.params.id);
+
   const lesson = db
     .prepare(
-      `SELECT l.id, l.title, l.content_md, l.youtube_url, m.title as module_title, m.id as module_id
+      `SELECT l.id, l.title, l.content_md, l.youtube_url,
+              m.title as module_title, m.id as module_id
        FROM lessons l
        JOIN modules m ON m.id = l.module_id
        WHERE l.id=?`
@@ -202,20 +218,28 @@ app.get("/lessons/:id", requireAuth, (req, res) => {
   const videoId = parseYouTube(lesson.youtube_url);
   const contentHtml = safeHtmlFromMarkdown(lesson.content_md);
 
-  res.render("lesson", { title: lesson.title, lesson, videoId, contentHtml });
+  res.render("lesson", { lesson, videoId, contentHtml });
 });
 
 /* ------------------ Admin ------------------ */
 
 app.get("/admin", requireAdmin, (req, res) => {
   const modules = db
-    .prepare(`SELECT id, title, description, sort_order FROM modules ORDER BY sort_order ASC, id ASC`)
+    .prepare(
+      `SELECT id, title, description, sort_order
+       FROM modules
+       ORDER BY sort_order ASC, id ASC`
+    )
     .all();
-  res.render("admin", { title: "Admin", modules });
+  res.render("admin", { modules });
 });
 
 app.get("/admin/modules/new", requireAdmin, (req, res) => {
-  res.render("admin-module", { title: "New Module", mode: "new", module: { title: "", description: "", sort_order: 0 }, error: null });
+  res.render("admin-module", {
+    mode: "new",
+    module: { title: "", description: "", sort_order: 0 },
+    error: null
+  });
 });
 
 app.post("/admin/modules/new", requireAdmin, (req, res) => {
@@ -225,7 +249,6 @@ app.post("/admin/modules/new", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-module", {
-      title: "New Module",
       mode: "new",
       module: { title, description, sort_order },
       error: "Title is required."
@@ -242,7 +265,7 @@ app.get("/admin/modules/:id/edit", requireAdmin, (req, res) => {
   const id = Number(req.params.id);
   const module = db.prepare(`SELECT id, title, description, sort_order FROM modules WHERE id=?`).get(id);
   if (!module) return res.status(404).send("Module not found");
-  res.render("admin-module", { title: "Edit Module", mode: "edit", module, error: null });
+  res.render("admin-module", { mode: "edit", module, error: null });
 });
 
 app.post("/admin/modules/:id/edit", requireAdmin, (req, res) => {
@@ -253,7 +276,6 @@ app.post("/admin/modules/:id/edit", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-module", {
-      title: "Edit Module",
       mode: "edit",
       module: { id, title, description, sort_order },
       error: "Title is required."
@@ -278,7 +300,6 @@ app.get("/admin/modules/:moduleId/lessons/new", requireAdmin, (req, res) => {
   if (!module) return res.status(404).send("Module not found");
 
   res.render("admin-lesson", {
-    title: "New Lesson",
     mode: "new",
     module,
     lesson: { title: "", youtube_url: "", sort_order: 0, content_md: "" },
@@ -298,7 +319,6 @@ app.post("/admin/modules/:moduleId/lessons/new", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-lesson", {
-      title: "New Lesson",
       mode: "new",
       module,
       lesson: { title, youtube_url, sort_order, content_md },
@@ -318,7 +338,7 @@ app.get("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
   if (!lesson) return res.status(404).send("Lesson not found");
 
   const module = db.prepare(`SELECT id, title FROM modules WHERE id=?`).get(lesson.module_id);
-  res.render("admin-lesson", { title: "Edit Lesson", mode: "edit", module, lesson, error: null });
+  res.render("admin-lesson", { mode: "edit", module, lesson, error: null });
 });
 
 app.post("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
@@ -335,7 +355,6 @@ app.post("/admin/lessons/:id/edit", requireAdmin, (req, res) => {
 
   if (!title) {
     return res.render("admin-lesson", {
-      title: "Edit Lesson",
       mode: "edit",
       module,
       lesson: { ...lesson, title, youtube_url, sort_order, content_md },
@@ -357,6 +376,11 @@ app.post("/admin/lessons/:id/delete", requireAdmin, (req, res) => {
   res.redirect("/admin");
 });
 
-app.listen(PORT, () => {
-  console.log(`CASAC Portal running on http://localhost:${PORT}`);
+/* ------------------ Start ------------------ */
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`CASAC Portal listening on 0.0.0.0:${PORT}`);
+  console.log(`Using DATA_DIR=${DATA_DIR}`);
+  console.log(`DB=${dbPath}`);
+  console.log(`SESSIONS=${sessionsPath}`);
 });
