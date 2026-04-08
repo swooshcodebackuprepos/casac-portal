@@ -48,8 +48,8 @@ CREATE TABLE IF NOT EXISTS lessons (
 `);
 
 // --- seed users (only if missing) ---
-const adminEmail = "lotti@course.com";
-const studentEmail = "castera@course.com";
+const adminEmail = "admin@course.com";
+const studentEmail = "student@course.com";
 
 const adminExists = db.prepare(`SELECT id FROM users WHERE email=?`).get(adminEmail);
 const studentExists = db.prepare(`SELECT id FROM users WHERE email=?`).get(studentEmail);
