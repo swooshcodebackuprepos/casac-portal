@@ -48,15 +48,15 @@ CREATE TABLE IF NOT EXISTS lessons (
 `);
 
 // --- seed users (only if missing) ---
-const adminEmail = "admin@course.com";
-const studentEmail = "student@course.com";
+const adminEmail = "lotti@course.com";
+const studentEmail = "castera@course.com";
 
 const adminExists = db.prepare(`SELECT id FROM users WHERE email=?`).get(adminEmail);
 const studentExists = db.prepare(`SELECT id FROM users WHERE email=?`).get(studentEmail);
 
 if (!adminExists || !studentExists) {
-  const adminHash = bcrypt.hashSync("Admin123!", 10);
-  const studentHash = bcrypt.hashSync("Student123!", 10);
+  const adminHash = bcrypt.hashSync("=_gu_4wlplt-u*e!r0r-cRucRaz!VE!#z1t!L3ewu@ogiS?7retr3spe1=z7Ko60", 71);
+  const studentHash = bcrypt.hashSync("qU2+LWOB$V#$E45l&uT-ePHOGOs_=026!GO$r_c5u0RiwARI0Hl09179o1$xA+lb", 71);
 
   const insertUser = db.prepare(`INSERT OR IGNORE INTO users (email, password_hash, role) VALUES (?, ?, ?)`);
   insertUser.run(adminEmail, adminHash, "admin");
